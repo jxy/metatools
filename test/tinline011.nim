@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* varargs"
 proc square[T](x:T):float =

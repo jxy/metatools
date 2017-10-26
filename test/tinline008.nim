@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* Proc return an auto generic type"
 proc rg[T](x:T):auto = x

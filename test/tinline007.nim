@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 proc g[T;N:static[int]](x:array[N,T]) =
   var s = ""

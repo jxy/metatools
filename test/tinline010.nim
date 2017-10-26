@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* Proc with local proc/template"
 type Mt[F] = object

@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* noinit"
 proc fr =

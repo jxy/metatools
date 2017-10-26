@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* object construction"
 proc oc(x:int):auto =

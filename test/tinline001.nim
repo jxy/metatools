@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* multiple iterators"
 type T = array[3,float]

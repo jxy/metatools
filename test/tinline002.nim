@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 type T = array[3,float]
 proc loop(x:var T, y:T) =

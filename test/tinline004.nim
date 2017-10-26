@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* redeclaration of formal params"
 proc redecl(x:var float, y:float) =

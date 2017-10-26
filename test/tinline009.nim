@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 type
   M[N:static[int],T] = object

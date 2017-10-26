@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 echo "* static[T]"
 proc fs(x:int, y:static[int]):int = x*y

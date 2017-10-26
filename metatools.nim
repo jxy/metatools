@@ -36,7 +36,7 @@ const exprNodes = {
   nnkBlockExpr,
   nnkTypeOfExpr }
 
-proc rebuild(n:NimNode):NimNode =
+proc rebuild*(n:NimNode):NimNode =
   # Typed AST has extra information in its nodes.
   # Replacing nodes in a typed AST can break its consistencies,
   # for which the compiler is not well prepared.
@@ -254,7 +254,7 @@ proc cleanIterator(n:NimNode):NimNode =
       template asgn(x,y:untyped):untyped =
         let x = y
       let n1 = replaceFastAsgn n[1]
-      result = getAst(asgn(n0,n1))[0]
+      result = getAst(asgn(n0,n1))
     else:
       result = n.copyNimNode
       for c in n: result.add replaceFastAsgn c
@@ -398,7 +398,7 @@ proc regenSym(n:NimNode):NimNode =
     let y = genSym(nskVar, $x.symbol)
     result = result.replaceExcl(x,y,nnkTypeOfExpr)
 
-proc inlineProcsY*(call: NimNode, procImpl: NimNode): NimNode =
+proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo ">>>>>> inlineProcsY"
   # echo "call:\n", call.lisprepr
   # echo "procImpl:\n", procImpl.treerepr
@@ -446,10 +446,10 @@ proc inlineProcsY*(call: NimNode, procImpl: NimNode): NimNode =
         quit 1
       # We do nothing, assuming the compiler has finished constant unfolding.
     elif typ.kind == nnkVarTy:
-      pre.add getAst(letX(t, newNimNode(nnkAddr,p).add p))[0]
+      pre.add getAst(letX(t, newNimNode(nnkAddr,p).add p))
       body = body.replaceNonDeclSym(sym, newNimNode(nnkDerefExpr,p).add(t), nnkHiddenDeref)
     else:
-      pre.add getAst(letX(t, p))[0]
+      pre.add getAst(letX(t, p))
       body = body.replaceNonDeclSym(sym, t)
   # echo "### body with fp replaced:"
   # echo body.repr
@@ -545,7 +545,7 @@ proc inlineProcsY*(call: NimNode, procImpl: NimNode): NimNode =
     let d = if noinit: getAst(varXNI(z,ty)) else: getAst(varX(z,ty))
     # if noinit: echo "noinit: ", d.lisprepr
     pre.add body.replace(r,z)
-    sl = newBlockStmt(newNimNode(nnkStmtListExpr,call).add(d[0], newBlockStmt(blockname, pre), z))
+    sl = newBlockStmt(newNimNode(nnkStmtListExpr,call).add(d, newBlockStmt(blockname, pre), z))
   else:
     echo "Internal ERROR: inlineProcsY: unforeseen length of the proc implementation: ", procImpl.len
     quit 1
@@ -561,7 +561,7 @@ proc callName(x: NimNode): NimNode =
   if x.kind in CallNodes: result = x[0]
   else: quit "callName: unknown kind (" & treeRepr(x) & ")\n" & repr(x)
 
-proc inlineProcsX*(body: NimNode): NimNode =
+proc inlineProcsX(body: NimNode): NimNode =
   # echo ">>>>>> inlineProcsX"
   # echo body.repr
   proc recurse(it: NimNode): NimNode =

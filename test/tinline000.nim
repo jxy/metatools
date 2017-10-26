@@ -1,4 +1,4 @@
-import inline
+import metatools
 
 proc f1(r: var any; x: any) = r = 2*x
 proc f2(x: any): auto = 2*x
