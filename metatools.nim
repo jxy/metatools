@@ -187,7 +187,7 @@ proc replaceNonDeclSym(b,s,r: NimNode, extra:NimNodeKind = nnkEmpty): NimNode =
   else:
     result = b
 
-proc append(x,y:NimNode) =
+template append(x,y:NimNode) =
   for c in y: x.add c
 
 proc matchGeneric(n,ty,g:NimNode):NimNode =
