@@ -126,7 +126,7 @@ proc replace(n,x,y:NimNode):NimNode =
 
 proc replaceId(n,x,y:NimNode):NimNode =
   # Same as replace but only replace eqIdent identifier.
-  if n.kind == nnkIdent and n.eqIdent($x):
+  if n.kind == nnkIdent and n.eqIdent(x):
     result = y.copyNimTree
   else:
     result = n.copyNimNode
