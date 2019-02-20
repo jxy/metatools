@@ -19,6 +19,7 @@ proc has(n:NimNode, k:NimNodeKind):bool =
     if c.kind == k: return true
   return false
 
+#[
 const exprNodes = {
   nnkExprEqExpr,
   nnkExprColonExpr,
@@ -35,6 +36,7 @@ const exprNodes = {
   nnkStmtListExpr,
   nnkBlockExpr,
   nnkTypeOfExpr }
+]#
 
 proc rebuild*(n:NimNode):NimNode =
   # Typed AST has extra information in its nodes.
@@ -50,28 +52,37 @@ proc rebuild*(n:NimNode):NimNode =
   # just before macro returns.
 
   # Special node kinds have to be taken care of.
-  if n.kind == nnkConv:
+  if n.kind == nnkAddr:
+    # We process typed NimNode, so addr is already checked.
+    result = newCall(bindsym"unsafeAddr", rebuild n[0])
+  elif n.kind == nnkConv:
     result = newNimNode(nnkCall, n).add(rebuild n[0], rebuild n[1])
   elif n.kind in nnkCallKinds and n[^1].kind == nnkBracket and
        n[^1].len>0 and n[^1].has(nnkHiddenCallConv):
     # special case of varargs
-    result = newCall(n[0])
+    result = newCall(rebuild n[0])
     for i in 1..<n.len-1: result.add rebuild n[i]
     for c in n[^1]:
-      if c.kind == nnkHiddenCallConv: result.add rebuild c[1]
+      if c.kind == nnkHiddenCallConv: result.add rebuild newcall(c[0], c[1])
       else: result.add rebuild c
-  elif n.kind in nnkCallKinds and n[0] == bindsym"echo" and n.len>0 and n[1].kind == nnkBracket:
-    # One dirty hack for the builtin echo, with no nnkHiddenCallConv (this is been caught above)
-    result = newCall(n[0])
-    for c in n[1]: result.add rebuild c
+#  elif n.kind in nnkCallKinds and n[0] == bindsym"echo" and n.len>0 and n[1].kind == nnkBracket:
+#    # One dirty hack for the builtin echo, with no nnkHiddenCallConv (this is been caught above)
+#    result = newCall(rebuild n[0])
+#    for c in n[1]: result.add rebuild c
+#    echo "In rebuild: echo: ",result.treerepr
+#  elif n.kind in nnkCallKinds and n[^1].kind == nnkHiddenStdConv and n[^1][1].kind == nnkBracket and
+#       n[^1][1].len>0 and n[^1][1].has(nnkHiddenCallConv):
   elif n.kind in nnkCallKinds and n[^1].kind == nnkHiddenStdConv and n[^1][1].kind == nnkBracket and
-       n[^1][1].len>0 and n[^1][1].has(nnkHiddenCallConv):
+       n[^1][1].len>0:
     # Deals with varargs
-    result = newCall(n[0])
+    result = newCall(rebuild n[0])
     for i in 1..<n.len-1: result.add rebuild n[i]
     for c in n[^1][1]:
-      if c.kind == nnkHiddenCallConv: result.add rebuild c[1]
+      if c.kind == nnkHiddenCallConv: result.add rebuild newcall(c[0], c[1])
       else: result.add rebuild c
+  elif n.kind in nnkCallKinds: 
+    result = newCall(rebuild n[0])
+    for i in 1..<n.len: result.add rebuild n[i]
   elif n.kind == nnkHiddenStdConv:
     # Generic HiddenStdConv
     result = rebuild n[1]
@@ -79,21 +90,31 @@ proc rebuild*(n:NimNode):NimNode =
     result = rebuild n[0][0]
   elif n.kind == nnkHiddenDeref and n[0].kind == nnkHiddenAddr:
     result = rebuild n[0][0]
+  elif n.kind in {nnkHiddenAddr,nnkHiddenDeref}:
+    result = rebuild n[0]
   elif n.kind == nnkTypeSection:
     # Type section is special.  Once the type is instantiated, it exists, and we don't want duplicates.
     result = newNimNode(nnkDiscardStmt,n).add(newStrLitNode(n.lisprepr))
 
   # Strip information from other kinds
   else:
-    # If something breaks, try adding the offensive node here.
+    if n.kind in AtomicNodes:
+      result = n.copyNimNode
+    else:
+      result = newNimNode(n.kind, n)
+#[
+    # If something breaks, try adding the offensive node here. 
     #if n.kind in nnkCallKinds + {nnkBracketExpr,nnkBracket,nnkDotExpr}:
     if n.kind in nnkCallKinds + exprNodes + {nnkAsgn}:
       result = newNimNode(n.kind, n)
     # Copy other kinds of node.
     else:
       result = n.copyNimNode
+]#
     for c in n:
       result.add rebuild c
+  #echo result.treerepr
+  #echo "### leave rebuild"
 
 proc replace(n,x,y:NimNode):NimNode =
   if n == x:
@@ -137,9 +158,7 @@ proc replaceExcl(n,x,y:NimNode, k:NimNodeKind):NimNode =
 proc replaceNonDeclSym(b,s,r: NimNode, extra:NimNodeKind = nnkEmpty): NimNode =
   # Replace a symbol `s` that's not declared in the body `b` with `r`.
   # Assuming a unique symbol exists.  Only works with trees of symbols.
-  var ss: string
-  if s.kind==nnkIdent: ss = $s
-  else: ss = $(s.symbol)
+  var ss = s.strVal
   # echo "replacing ",ss
   var
     declSyms = newPar()
@@ -206,7 +225,7 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
     ti.expectKind nnkBracketExpr
     let tn = ti[0]
     tn.expectKind nnkSym
-    let td = tn.symbol.getImpl
+    let td = tn.getImpl
     td.expectKind nnkTypeDef
     result = td[1]
     result.expectKind nnkGenericParams
@@ -249,7 +268,7 @@ proc cleanIterator(n:NimNode):NimNode =
   var fa = newPar()
   proc replaceFastAsgn(n:NimNode):NimNode =
     if n.kind == nnkFastAsgn:
-      let n0 = genSym(nskLet, $n[0].symbol)
+      let n0 = genSym(nskLet, n[0].strVal)
       fa.add newPar(n[0],n[1],n0)
       template asgn(x,y:untyped):untyped =
         let x = y
@@ -391,11 +410,11 @@ proc regenSym(n:NimNode):NimNode =
   # any type info.
   for x in result.get nnkLetSection:
     #echo "Regen Let: ",x.repr
-    let y = genSym(nskLet, $x.symbol)
+    let y = genSym(nskLet, x.strVal)
     result = result.replaceExcl(x,y,nnkTypeOfExpr)
   for x in result.get nnkVarSection:
     #echo "Regen Var: ",x.repr
-    let y = genSym(nskVar, $x.symbol)
+    let y = genSym(nskVar, x.strVal)
     result = result.replaceExcl(x,y,nnkTypeOfExpr)
 
 proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
@@ -431,13 +450,17 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     let
       (sym,typ) = getParam(fp, i)
       t = genSym(nskLet, $sym)
+      c = genSym(nskConst, $sym)
     template letX(x,y: untyped): untyped =
       let x = y
-    # echo "sym: ",sym.lineinfo," :: ",sym.lisprepr
-    # echo "typ: ",typ.lineinfo," :: ",typ.lisprepr
+    template constX(x,y: untyped): untyped =
+      const x = y
     # let p = if call[i].kind in {nnkHiddenAddr,nnkHiddenDeref}: call[i][0] else: call[i]
     let p = call[i]
-    if typ.kind == nnkStaticTy:
+    # echo "parameter: ",i," : ",p.treerepr
+    # echo "sym: ",sym.lineinfo," :: ",sym.lisprepr
+    # echo "typ: ",typ.lineinfo," :: ",typ.lisprepr
+    if typ.kind == nnkStaticTy or (typ.kind == nnkBracketExpr and typ[0] == bindsym"static"):
       # echo typ.lisprepr
       # echo p.lisprepr
       if p.kind notin nnkLiterals:
@@ -445,6 +468,12 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
         echo "    received a non-literal node: ",p.lisprepr
         quit 1
       # We do nothing, assuming the compiler has finished constant unfolding.
+    elif p.kind in nnkLiterals:
+      pre.add getAst(constX(c, p))
+      body = body.replaceNonDeclSym(sym, c)
+    elif p.kind == nnkHiddenStdConv and p[^1].kind in nnkLiterals:
+      pre.add getAst(constX(c, p[^1]))
+      body = body.replaceNonDeclSym(sym, c)
     elif typ.kind == nnkVarTy:
       pre.add getAst(letX(t, newNimNode(nnkAddr,p).add p))
       body = body.replaceNonDeclSym(sym, newNimNode(nnkDerefExpr,p).add(t), nnkHiddenDeref)
@@ -526,14 +555,21 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
       var x: t
     template varXNI(x,t:untyped):untyped =
       var x {.noinit.} : t
+    var calln:NimNode
+    if call.kind == nnkHiddenCallConv:
+      calln = newNimNode nnkCall
+      call.copyChildrenTo calln
+    else:
+      calln = call.copyNimTree
     let
       #ty = call.gettypeinst
       #ty = call[0].gettypeinst[0][0]
       #ty = call[0].gettypeimpl[0][0]
-      ty = newNimNode(nnkTypeOfExpr,call).add(call.copyNimTree)
+      ty = newNimNode(nnkTypeOfExpr,call).add(calln)
       r = procImpl[7]
-      z = genSym(nskVar, $r.symbol)
+      z = genSym(nskVar, r.strVal)
       p = procImpl[4]
+    #echo "    ty: ",ty.lisprepr
     var noinit = false
     if p.kind != nnkEmpty:
       # echo "pragmas: ", p.lisprepr
@@ -567,7 +603,7 @@ proc inlineProcsX(body: NimNode): NimNode =
   proc recurse(it: NimNode): NimNode =
     if it.kind == nnkTypeOfExpr: return it.copyNimTree
     if it.kind in CallNodes and it.callName.kind==nnkSym:
-      let procImpl = it.callName.symbol.getImpl
+      let procImpl = it.callName.getImpl
       # echo "inspecting call"
       # echo it.lisprepr
       # echo procImpl.repr
